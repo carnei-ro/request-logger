@@ -27,10 +27,6 @@ class S(BaseHTTPRequestHandler):
         r['path']=str(self.path)
         r['headers']=dict(self.headers)
         r['body']=data
-        envs=[]
-        for k, v in os.environ.items():
-            envs.append(k+"='"+v+"'")
-        r['os_envs']=sorted(envs)
         logging.info("\n> Method: %s\n> Version: %s\n> Path: %s\n> Headers:\n%s> Body:\n%s\n",
                 str(self.command), str(self.request_version), str(self.path), str(self.headers), data)
         return r
