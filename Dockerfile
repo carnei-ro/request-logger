@@ -1,5 +1,7 @@
 FROM python:3-alpine
 
+RUN pip install requests
+
 WORKDIR /app
 COPY server.py /app/server.py
 

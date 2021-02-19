@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import logging
 import json
 import os
+import requests
 
 class S(BaseHTTPRequestHandler):
     def _set_response(self, length):
@@ -16,12 +17,16 @@ class S(BaseHTTPRequestHandler):
         self.send_header('Content-Length', length)
         self.end_headers()
     
-    def _process_request(self):
+    def _get_body(self):
         data = ''
         if self.headers['Content-Length']:
             content_length = int(self.headers['Content-Length'])
             data = self.rfile.read(content_length)
             data = data.decode('utf-8')
+        return data
+
+    def _process_request(self):
+        data = self._get_body()
         r = {}
         r['method']=str(self.command)
         r['path']=str(self.path)
@@ -35,10 +40,32 @@ class S(BaseHTTPRequestHandler):
                 str(self.command), str(self.request_version), str(self.path), str(self.headers), data)
         return r
 
+    def _remove_prefix(self):
+        text = str(self.path)
+        prefix = '/proxy-to/'
+        return text[text.startswith(prefix) and len(prefix):]
+
+    def _proxy_to(self):
+        URL = self._remove_prefix()
+        headers = dict(self.headers) if (os.getenv('FORWARD_ALL_HEADERS', 'true') == 'true') else dict({})
+        if 'Content-Length' in headers:
+            headers.pop('Content-Length', None)
+            logging.warning('Payload will not be proxyed')
+        r = requests.get(url = URL, headers = headers)
+        self.send_response(r.status_code)
+        for h in dict(r.headers):
+            self.send_header(h, str(r.headers[h]))
+        self.end_headers()
+        self.wfile.write(r.text.encode('utf-8'))
+
     def do_GET(self):
-        r = json.dumps(self._process_request(), indent=2).encode('utf-8')
-        self._set_response(len(r))
-        self.wfile.write(r)
+        if str(self.path).startswith('/proxy-to/'):
+            self._process_request()
+            self._proxy_to()
+        else:
+            r = json.dumps(self._process_request(), indent=2).encode('utf-8')
+            self._set_response(len(r))
+            self.wfile.write(r)
 
     def do_HEAD(self):
         r = json.dumps(self._process_request(), indent=2).encode('utf-8')
