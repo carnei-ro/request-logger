@@ -45,10 +45,35 @@ class S(BaseHTTPRequestHandler):
         prefix = '/proxy-to/'
         return text[text.startswith(prefix) and len(prefix):]
 
+    def _forward_trace_headers(self):
+        headers = {}
+        for request_header in dict(self.headers):
+            if (request_header.lower() in ['x-request-id', 'x-b3-traceid', 'x-b3-spanid', 'x-b3-parentspanid', 'x-b3-sampled', 'x-b3-flags', 'b3']) or (request_header.lower().startswith('x-ifood-')):
+                headers[request_header] = self.headers[request_header]
+        logging.info('trace headers => ' + str(headers))
+        return headers
+
+    def _filter_headers(self, headers_names):
+        headers = {}
+        for request_header in dict(self.headers):
+            if (request_header.lower() in headers_names):
+                headers[request_header] = self.headers[request_header]
+        logging.info('forward only these headers => ' + str(headers))
+        return headers
+
+    def _forward_headers(self):
+        headers = dict(self.headers) if (os.getenv('FORWARD_ALL_HEADERS', 'true') == 'true') else dict({})
+        headers = self._forward_trace_headers() if (os.getenv('FORWARD_TRACE_HEADERS', 'true') == 'true') else headers
+        if 'x-req-forward-only-these-headers' in  [x.lower() for x in list(dict(self.headers).keys())]:
+            headers_names = [ v for k, v in dict(self.headers).items() if k.lower() == 'x-req-forward-only-these-headers'][0].split(",")
+            headers_names = [ n.strip().lower() for n in headers_names ]
+            headers = self._filter_headers(headers_names)
+        return headers
+
     def _proxy_to(self):
         URL = self._remove_prefix()
-        headers = dict(self.headers) if (os.getenv('FORWARD_ALL_HEADERS', 'true') == 'true') else dict({})
-        if 'Content-Length' in headers:
+        headers = self._forward_headers()
+        if 'Content-Length' in headers.keys():
             headers.pop('Content-Length', None)
             logging.warning('Payload will not be proxyed')
         r = requests.get(url = URL, headers = headers)
