@@ -9,6 +9,7 @@ import logging
 import json
 import os
 import requests
+import random
 
 class S(BaseHTTPRequestHandler):
     def _set_response(self, length):
@@ -40,9 +41,8 @@ class S(BaseHTTPRequestHandler):
                 str(self.command), str(self.request_version), str(self.path), str(self.headers), data)
         return r
 
-    def _remove_prefix(self):
+    def _remove_prefix(self, prefix):
         text = str(self.path)
-        prefix = '/proxy-to/'
         return text[text.startswith(prefix) and len(prefix):]
 
     def _forward_trace_headers(self):
@@ -71,7 +71,7 @@ class S(BaseHTTPRequestHandler):
         return headers
 
     def _proxy_to(self):
-        URL = self._remove_prefix()
+        URL = self._remove_prefix('/proxy-to/')
         headers = self._forward_headers()
         if 'Content-Length' in headers.keys():
             headers.pop('Content-Length', None)
@@ -83,10 +83,32 @@ class S(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(r.text.encode('utf-8'))
 
+    def _forced_fail(self):
+        try:
+            percentage = int(self._remove_prefix('/fail/'))
+        except:
+            percentage = 100
+        r = random.randint(0,100)
+        if percentage >= r:
+            self.send_response(503)
+            self.send_header('x-forced-failed', 'true')
+            self.send_header('x-r', r)
+            self.end_headers()
+            self.wfile.write('forced fail'.encode('utf-8'))
+        else:
+            self.send_response(200)
+            self.send_header('x-forced-failed', 'false')
+            self.send_header('x-r', r)
+            self.end_headers()
+            self.wfile.write('ok'.encode('utf-8'))
+
     def do_GET(self):
         if str(self.path).startswith('/proxy-to/'):
             self._process_request()
             self._proxy_to()
+        elif str(self.path).startswith('/fail/'):
+            self._process_request()
+            self._forced_fail()
         else:
             r = json.dumps(self._process_request(), indent=2).encode('utf-8')
             self._set_response(len(r))
