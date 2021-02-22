@@ -61,12 +61,18 @@ class S(BaseHTTPRequestHandler):
         logging.info('forward only these headers => ' + str(headers))
         return headers
 
+    def _get_header_value(self, header_name):
+        header_value = None
+        if header_name.lower() in [x.lower() for x in list(dict(self.headers).keys())]:
+            header_value = [ v for k, v in dict(self.headers).items() if k.lower() == header_name.lower()][0]
+        return header_value
+
     def _forward_headers(self):
         headers = dict(self.headers) if (os.getenv('FORWARD_ALL_HEADERS', 'true') == 'true') else dict({})
         headers = self._forward_trace_headers() if (os.getenv('FORWARD_TRACE_HEADERS', 'true') == 'true') else headers
-        if 'x-req-forward-only-these-headers' in  [x.lower() for x in list(dict(self.headers).keys())]:
-            headers_names = [ v for k, v in dict(self.headers).items() if k.lower() == 'x-req-forward-only-these-headers'][0].split(",")
-            headers_names = [ n.strip().lower() for n in headers_names ]
+        headers_names = self._get_header_value('x-req-forward-only-these-headers')
+        if headers_names:
+            headers_names = [ n.strip().lower() for n in headers_names.split(",") ]
             headers = self._filter_headers(headers_names)
         return headers
 
@@ -88,9 +94,11 @@ class S(BaseHTTPRequestHandler):
             percentage = int(self._remove_prefix('/fail/'))
         except:
             percentage = 100
+        status_code_from_header = self._get_header_value('x-fail-code')
+        status_code = 503 if not status_code_from_header else int(status_code_from_header)
         r = random.randint(0,100)
         if percentage >= r:
-            self.send_response(503)
+            self.send_response(status_code)
             self.send_header('x-forced-failed', 'true')
             self.send_header('x-r', r)
             self.end_headers()
